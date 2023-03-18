@@ -1,9 +1,15 @@
+#![no_std]
+extern crate alloc;
+use alloc::collections::BTreeSet;
+use core::{
+    cmp::Ordering,
+    fmt::{self, Display},
+};
 use itertools::Itertools;
 use num_traits::{Num, SaturatingSub};
-use std::{cmp::Ordering, collections::BTreeSet, fmt::Display};
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
-pub enum Unit<T: Num + SaturatingSub> {
+pub enum Unit<T> {
     Singleton(T),
     Range((T, T)),
 }
@@ -39,7 +45,7 @@ impl<T: Num + SaturatingSub + Ord + Copy> Ord for Unit<T> {
 }
 
 impl<T: Num + SaturatingSub + Ord + Copy> PartialOrd for Unit<T> {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         if self.low() > other.high() {
             Some(Ordering::Greater)
         } else if self.high() < other.low() {
@@ -50,8 +56,8 @@ impl<T: Num + SaturatingSub + Ord + Copy> PartialOrd for Unit<T> {
     }
 }
 
-impl<T: Num + SaturatingSub + Display> Display for Unit<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<T: Num + Display> Display for Unit<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Unit::Singleton(s) => write!(f, "{s}"),
             Unit::Range((t, u)) => write!(f, "{t}-{u}"),
@@ -60,10 +66,10 @@ impl<T: Num + SaturatingSub + Display> Display for Unit<T> {
 }
 
 #[derive(Default)]
-pub struct Ranger<T: Num + SaturatingSub>(BTreeSet<Unit<T>>);
+pub struct Ranger<T: Num>(BTreeSet<Unit<T>>);
 
-impl<T: Num + SaturatingSub + Display> Display for Ranger<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<T: Num + Display> Display for Ranger<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for u in self.0.iter().take(self.0.len().saturating_sub(1)) {
             write!(f, "{},", u)?
         }
@@ -108,6 +114,8 @@ impl<T: Num + SaturatingSub + Ord + Copy> Ranger<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::string::ToString;
+    use libc_print::libc_println;
     use rand::{seq::SliceRandom, thread_rng};
 
     #[test]
@@ -141,7 +149,7 @@ mod tests {
             ranger.to_string(),
             "-128--126,-1-2,4,6-8,11-12,14-25,27-33,35-39,125-127"
         );
-        println!("{:?} -> {ranger}", input_numbers);
+        libc_println!("{:?} -> {ranger}", input_numbers);
         drop(ranger);
 
         // Rule out edge cases
