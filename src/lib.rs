@@ -1,4 +1,4 @@
-use num_traits::{Num, SaturatingAdd, SaturatingSub};
+use num_traits::{Num, SaturatingAdd};
 use std::{cmp::Ordering, collections::BTreeSet, fmt::Display};
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
@@ -8,40 +8,53 @@ pub enum Unit<T: Num + SaturatingAdd> {
 }
 
 impl<T: Num + Ord + SaturatingAdd + Copy + Display> Unit<T> {
-    fn is_one_less_than(&self, other: &Self) -> bool {
-        match self {
-            Unit::Single(s) => match other {
-                Unit::Single(o) => s < o && s.saturating_add(&T::one()) == *o,
-                Unit::Range((ol, _)) => s < ol && s.saturating_add(&T::one()) == *ol,
-            },
-            Unit::Range((_, sh)) => match other {
-                Unit::Single(o) => sh < o && sh.saturating_add(&T::one()) == *o,
-                Unit::Range((ol, _)) => sh < ol && sh.saturating_add(&T::one()) == *ol,
-            },
+    fn umm(&self, other: &Self) -> Option<Unit<T>> {
+        if self == other {
+            return None;
         }
-    }
-    fn is_within(&self, other: &Self) -> bool {
-        match self {
-            Unit::Single(s) => match other {
-                Unit::Single(o) => s == o,
-                Unit::Range((ol, oh)) => ol <= s && s <= oh,
+        let left = self.min(other);
+        let right = self.max(other);
+        match left {
+            Unit::Single(l) => match right {
+                Unit::Single(r) => {
+                    if l < r && l.saturating_add(&T::one()) == *r {
+                        Some(Unit::Range((*l, *r)))
+                    } else {
+                        None
+                    }
+                }
+                Unit::Range((rl, r)) => {
+                    if l < rl {
+                        if l.saturating_add(&T::one()) == *rl {
+                            Some(Unit::Range((*l, *r)))
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                }
             },
-            Unit::Range((sl, sh)) => match other {
-                Unit::Single(o) => sl <= o && o <= sh,
-                Unit::Range((ol, oh)) => sl <= oh && ol <= sh,
+            Unit::Range((ll, lr)) => match other {
+                Unit::Single(r) => {
+                    if lr < r {
+                        if lr.saturating_add(&T::one()) == *r {
+                            Some(Unit::Range((*ll, *r)))
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                }
+                Unit::Range((rl, rr)) => {
+                    if lr < rl && lr.saturating_add(&T::one()) == *rl || ll <= rr && rl <= lr {
+                        Some(Unit::Range((*ll, *rr)))
+                    } else {
+                        None
+                    }
+                }
             },
-        }
-    }
-    fn right(&self) -> T {
-        match self {
-            Unit::Single(s) => *s,
-            Unit::Range((_, r)) => *r,
-        }
-    }
-    fn left(&self) -> T {
-        match self {
-            Unit::Single(s) => *s,
-            Unit::Range((l, _)) => *l,
         }
     }
 }
@@ -57,7 +70,7 @@ impl<T: Num + SaturatingAdd + Display> Display for Unit<T> {
 
 impl<T: Num + SaturatingAdd + Ord> Ord for Unit<T> {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.partial_cmp(other).unwrap_or(Ordering::Greater)
+        self.partial_cmp(other).unwrap_or(Ordering::Less)
     }
 }
 
@@ -122,160 +135,36 @@ impl<T: Num + SaturatingAdd + Display> Display for Ranger<T> {
 impl<T: Num + SaturatingAdd + Ord + Copy + Display> Ranger<T> {
     fn put(&mut self, v: T) {
         let value = Unit::Single(v);
-        println!("put {value}; we have {}", self);
-        if let Some(right) = self.set.last().copied() {
-            if value.is_within(&right) {
-                println!("{value} is within {right} so do nothing at all");
-                return;
-            } else if right < value {
-                if !right.is_one_less_than(&value) {
-                    println!("{value} is more than one bigger than the last entry {right}, so let's insert and do nothing else");
-                    self.set.insert(value);
-                } else {
-                    let l = right.left();
-                    println!(
-                        "{value} is one less than {right}, so remove {right} and insert {l}-{v} and do nothing else"
-                    );
-                    self.set.remove(&right);
-                    self.set.insert(Unit::Range((l, v)));
-                }
-                return;
-            }
-        } else {
-            self.set.insert(value);
-            return;
-        }
-        if let Some(left) = self.set.first().copied() {
-            if value.is_within(&left) {
-                println!("{value} is within {left} so do nothing at all");
-                return;
-            } else if value < left {
-                if !value.is_one_less_than(&left) {
-                    println!("{value} is more than one less than the first entry {left}, so let's insert and do nothing else");
-                    self.set.insert(value);
-                } else {
-                    let r = left.right();
-                    println!(
-                        "{value} is one less than {left}, so remove {value} and insert {v}-{r} and do nothing else"
-                    );
+        self.set.insert(value);
+        let mut right_side = self.set.split_off(&value);
+        if let Some(left) = self.set.last().copied() {
+            if let Some(merged) = left.umm(&value) {
+                    right_side.remove(&value);
                     self.set.remove(&left);
-                    self.set.insert(Unit::Range((v, r)));
+                    right_side.insert(merged);
                 }
-                return;
             }
-        }
-        // self.set.insert(value);
-        // let p_item = self.set.range(..=value).nth_back(1).copied();
-        // let n_item = self.set.range(value..).nth(1).copied();
-        let (left, right) = self.left_right(value).unwrap();
-        if left.is_one_less_than(&right) || left.is_within(&right) {
-            println!("{value} is between {left} and {right}, while those two are adjacent, so let's remove and merge them and do nothing else");
-            self.set.remove(&left);
-            self.set.remove(&right);
-            self.set.insert(Unit::Range((left.left(), right.right())));
-            return
-        }
-        // let items = p_item.and_then(|p| n_item.map(|n| (p.min(n), p.max(n))));
-        // if let Some((left, right)) = items {
-        if value.is_within(&right) {
-            println!("{value} is within {right} so do nothing at all");
-        } else if right > value {
-            if !value.is_one_less_than(&right) {
-                print!("{value} is more than one lesser than the next entry {right}");
-                if value > left && left.is_one_less_than(&value) {
-                    let l = left.left();
-                    println!(" but {value} is one greater than {left}, so let's remove {left} and insert {l}-{v} and do nothing else, ok?");
-                    self.set.remove(&left);
-                    let insertia = Unit::Range((l, v));
-                    if let Some((other_left, other_right)) = self.left_right(insertia) {
-                        println!("but we have a left {other_left} and right {insertia}!");
-                        if other_left.is_one_less_than(&insertia) || other_left.is_within(&insertia) {
-                            let real_left = other_left.min(insertia);
-                            let real_right = other_left.max(insertia);
-                            let l = real_left.left();
-                            let r = real_right.right();
-                            let otherinsertia = Unit::Range((l, r));
-                            println!("Oh wait we gotta merge {other_left} and {insertia} into {otherinsertia}...!!!!!!!!!!!1111!!!");
-                            self.set.remove(&other_left);
-                            self.set.insert(otherinsertia);
-                        } else {
-                            self.set.insert(insertia);
-                        }
-                    } else if let Some(left) = self.set.last().copied() {
-                        if left.is_one_less_than(&insertia)  || left.is_within(&insertia) {
-                            let l = left.left();
-                            let r = insertia.right();
-                            let otherinsertia = Unit::Range((l, r));
-                            println!("wait wait waiiaaiiait!!!!! {left} is adjacent to {insertia} so remove {left} and insert {otherinsertia}");
-                            self.set.remove(&left);
-                            self.set.insert(otherinsertia);
-                        } else {
-                            self.set.insert(insertia);
-                        }
-                    } else {
-                        self.set.insert(insertia);
-                    }
-                } else {
-                    println!(" and {value} is more than one greater than {left}, so let's insert {value} and do nothing else");
-                    self.set.insert(value);
-                }
+
+        while let Some(new_right) = right_side.iter().nth(1).copied() {
+            let new_val = right_side.first().copied().unwrap();
+            if let Some(m) = new_val.umm(&new_right) {
+                right_side.remove(&new_right);
+                right_side.remove(&new_val);
+                right_side.insert(m);
             } else {
-                let r = right.right();
-                println!("{value} is one less than {right}, so remove {right} and insert {v}-{r} and do nothing else");
-                let insertia = Unit::Range((v, r));
-                self.set.remove(&right);
-                if let Some((other_left, other_right)) = self.left_right(insertia) {
-                    println!("but we have a left {other_left} and right {insertia}!");
-                    if other_left.is_one_less_than(&insertia) || other_left.is_within(&insertia) {
-                        let real_left = other_left.min(insertia);
-                        let real_right = other_left.max(insertia);
-                        let l = real_left.left();
-                        let r = real_right.right();
-                        let otherinsertia = Unit::Range((l, r));
-                        println!("Oh wait we gotta merge {other_left} and {insertia} into {otherinsertia}...!!!!!!!!!!!1111!!!");
-                        self.set.remove(&other_left);
-                        self.set.insert(otherinsertia);
-                    } else {
-                        self.set.insert(insertia);
-                    }
-                } else if let Some(left) = self.set.last().copied() {
-                    if left.is_one_less_than(&insertia) || left.is_within(&insertia) {
-                        let l = left.left();
-                        let r = insertia.right();
-                        let otherinsertia = Unit::Range((l, r));
-                        println!("wait wait waiiaaiiait!!!!! {left} is adjacent to {insertia} so remove {left} and insert {otherinsertia}");
-                        self.set.remove(&left);
-                        self.set.insert(otherinsertia);
-                    } else {
-                        self.set.insert(insertia);
-                    }
-                } else {
-                    self.set.insert(insertia);
-                }
+                break;
             }
-            return
         }
 
+        self.set.extend(right_side);
     }
-
-    fn left_right(&mut self, value: Unit<T>) -> Option<(Unit<T>, Unit<T>)> {
-        let mut right_items = self.set.split_off(&value);
-        right_items.remove(&value);
-        let f = right_items.first().and_then(|right| {
-            self.set.last().map(|left| (*left, *right))
-        });
-        self.set.extend(right_items);
-        f
-    }
-}
-
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
 }
 
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
+
+    use rand::{seq::SliceRandom, thread_rng};
 
     use super::*;
 
@@ -304,7 +193,7 @@ mod tests {
         );
         let input_numbers: &[u16] = &[
             33, 35, 23, 20, 28, 19, 18, 14, 25, 21, 38, 6, 39, 27, 11, 17, 7, 12, 31, 15, 32, 4,
-            29, 36, 22, 1, 0, 37, 30, 8, 24, 16, 2,
+            29, 36, 22, 1, 0, 37, 30, 8, 24, 16, 2, 65535, 65534, 65531, 65533, 65532, 65530
         ];
         let mut ranger = Ranger {
             set: BTreeSet::new(),
@@ -319,8 +208,22 @@ mod tests {
         {}",
             ranger
         );
-        assert!(ranger.to_string() == "0-2,4,6-8,11-12,14-25,27-33,35-39");
+        assert!(ranger.to_string() == "0-2,4,6-8,11-12,14-25,27-33,35-39,65530-65535");
         drop(ranger);
+
+        for _ in 0..100 {
+            let mut myvec = input_numbers.to_vec();
+            myvec.shuffle(&mut thread_rng());
+            // println!("{:?}", myvec);
+            let mut ranger = Ranger {
+                set: BTreeSet::new(),
+            };
+            println!("{:?}", myvec);
+            for num in myvec {
+                ranger.put(num);
+            }
+            assert!(ranger.to_string() == "0-2,4,6-8,11-12,14-25,27-33,35-39,65530-65535");
+        }
     }
 }
 
