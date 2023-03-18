@@ -1,14 +1,14 @@
 use itertools::Itertools;
-use num_traits::PrimInt;
+use num_traits::{bounds::UpperBounded, Num, PrimInt};
 use std::{cmp::Ordering, collections::BTreeSet, fmt::Display};
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
-pub enum Unit<T: PrimInt> {
+pub enum Unit<T: Num> {
     Singleton(T),
     Range((T, T)),
 }
 
-impl<T: PrimInt + Copy> Unit<T> {
+impl<T: Num + UpperBounded + Copy> Unit<T> {
     fn merged(&self, other: &Self) -> Option<Unit<T>> {
         if self.high() == &T::max_value() || *other.low() - *self.high() == T::one() {
             Some(Unit::Range((*self.low(), *other.high())))
@@ -18,7 +18,7 @@ impl<T: PrimInt + Copy> Unit<T> {
     }
 }
 
-impl<T: PrimInt> Unit<T> {
+impl<T: Num> Unit<T> {
     fn low(&self) -> &T {
         match self {
             Unit::Singleton(l) => l,
@@ -34,22 +34,13 @@ impl<T: PrimInt> Unit<T> {
     }
 }
 
-impl<T: PrimInt + Display> Display for Unit<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Unit::Singleton(s) => write!(f, "{s}"),
-            Unit::Range((t, u)) => write!(f, "{t}-{u}"),
-        }
-    }
-}
-
-impl<T: PrimInt> Ord for Unit<T> {
+impl<T: Num + Ord> Ord for Unit<T> {
     fn cmp(&self, other: &Self) -> Ordering {
         unsafe { self.partial_cmp(other).unwrap_unchecked() }
     }
 }
 
-impl<T: PrimInt> PartialOrd for Unit<T> {
+impl<T: Num + Ord> PartialOrd for Unit<T> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         if self.low() > other.high() {
             Some(Ordering::Greater)
@@ -57,6 +48,15 @@ impl<T: PrimInt> PartialOrd for Unit<T> {
             Some(Ordering::Less)
         } else {
             Some(self.high().cmp(other.high()))
+        }
+    }
+}
+
+impl<T: Num + Display> Display for Unit<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Unit::Singleton(s) => write!(f, "{s}"),
+            Unit::Range((t, u)) => write!(f, "{t}-{u}"),
         }
     }
 }
@@ -75,7 +75,7 @@ impl<T: PrimInt + Display> Display for Ranger<T> {
     }
 }
 
-impl<T: PrimInt + Copy + Display> Ranger<T> {
+impl<T: PrimInt> Ranger<T> {
     pub fn new() -> Self {
         Self(BTreeSet::new())
     }
@@ -91,6 +91,7 @@ impl<T: PrimInt + Copy + Display> Ranger<T> {
                 high_side.insert(merged);
             }
         }
+
         while let Some((m, l, h)) = high_side
             .iter()
             .copied()
@@ -112,10 +113,17 @@ mod tests {
 
     #[test]
     fn it_works() {
-        let input_numbers: &[u8] = &[
+        let input_numbers: &mut [u8] = &mut [
             0, 1, 2, 4, 6, 7, 8, 11, 12, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 27, 28,
             29, 30, 31, 32, 33, 35, 36, 37, 38, 39,
         ];
+        let mut ranger = Ranger::new();
+        for num in input_numbers.iter() {
+            ranger.insert(*num);
+        }
+        assert_eq!(ranger.to_string(), "0-2,4,6-8,11-12,14-25,27-33,35-39");
+        drop(ranger);
+        input_numbers.reverse();
         let mut ranger = Ranger::new();
         for num in input_numbers {
             ranger.insert(*num);
@@ -135,9 +143,8 @@ mod tests {
             "0-2,4,6-8,11-12,14-25,27-33,35-39,126,128,253-255"
         );
         drop(ranger);
-
-        // Just to be extra thorough
-        for _ in 0..100_000 {
+        
+        for _ in 0..100_000 { // Just to be extra thorough
             let mut myvec = input_numbers.to_vec();
             myvec.shuffle(&mut thread_rng());
             // println!("{:?}", myvec);
