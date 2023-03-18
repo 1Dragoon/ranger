@@ -14,7 +14,6 @@ impl<T: Num + Ord + SaturatingAdd + Copy> Unit<T> {
         let sl = self.low();
         let oh = other.high();
         if sl < oh && sl.saturating_add(&T::one()) == *oh
-            || sl <= oh && ol <= sh
             || sh < ol && sh.saturating_add(&T::one()) == *ol
         {
             Some(Unit::Range((*sl, *oh)))
@@ -22,7 +21,9 @@ impl<T: Num + Ord + SaturatingAdd + Copy> Unit<T> {
             None
         }
     }
+}
 
+impl<T: Num + SaturatingAdd> Unit<T> {
     fn low(&self) -> &T {
         match self {
             Unit::Single(l) => l,
@@ -47,26 +48,24 @@ impl<T: Num + SaturatingAdd + Display> Display for Unit<T> {
     }
 }
 
-impl<T: Num + SaturatingAdd + Ord + Copy> Ord for Unit<T> {
+impl<T: Num + SaturatingAdd + Ord> Ord for Unit<T> {
     fn cmp(&self, other: &Self) -> Ordering {
         self.partial_cmp(other).unwrap()
     }
 }
 
-impl<T: Num + SaturatingAdd + Ord + Copy> PartialOrd for Unit<T> {
+impl<T: Num + SaturatingAdd + Ord> PartialOrd for Unit<T> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         let sh = self.high();
         let ol = other.low();
         let sl = self.low();
         let oh = other.high();
-        if sl > oh || sl > ol {
+        if sl > oh {
             Some(Ordering::Greater)
         } else if sh < ol {
             Some(Ordering::Less)
-        } else if sh == ol {
-            Some(Ordering::Equal)
         } else {
-            Some(sh.cmp(&oh))
+            Some(sh.cmp(oh))
         }
     }
 }
@@ -89,6 +88,7 @@ impl<T: Num + SaturatingAdd + Ord + Copy + Display> Ranger<T> {
     pub fn new() -> Self {
         Self(BTreeSet::new())
     }
+
     pub fn insert(&mut self, v: T) {
         let value = Unit::Single(v);
         self.0.insert(value);
