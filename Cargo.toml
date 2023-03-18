@@ -8,5 +8,4 @@ edition = "2021"
 [dependencies]
 num-traits = "0.2.15"
 itertools = "0.10.5"
-range-set = "0.0.9"
 rand = "0.8.5"
