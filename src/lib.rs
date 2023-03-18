@@ -87,27 +87,27 @@ impl<T: Num + SaturatingSub + Ord + Copy> Ranger<T> {
 
     pub fn insert(&mut self, v: T) {
         let value = Unit::Singleton(v);
+
         self.0.insert(value);
-        let mut high_side = self.0.split_off(&value);
-        if let Some(low) = self.0.last().copied() {
+        if let Some(low) = self.0.range(..value).next_back().copied() {
             if let Some(merged) = low.merged(&value) {
-                high_side.remove(&value);
+                self.0.remove(&value);
                 self.0.remove(&low);
-                high_side.insert(merged);
+                self.0.insert(merged);
             }
         }
 
-        while let Some((m, l, h)) = high_side
-            .iter()
+        while let Some((m, l, h)) = self
+            .0
+            .range(value..)
             .copied()
             .next_tuple()
             .and_then(|(l, h)| l.merged(&h).map(|m| (m, l, h)))
         {
-            high_side.remove(&l);
-            high_side.remove(&h);
-            high_side.insert(m);
+            self.0.remove(&l);
+            self.0.remove(&h);
+            self.0.insert(m);
         }
-        self.0.extend(high_side);
     }
 }
 
