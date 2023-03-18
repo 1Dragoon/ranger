@@ -5,7 +5,6 @@ use core::{
     cmp::Ordering,
     fmt::{self, Display},
 };
-use itertools::Itertools;
 use num_traits::{Num, SaturatingSub};
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
@@ -22,14 +21,12 @@ impl<T: Num + Ord + SaturatingSub + Copy> Unit<T> {
             None
         }
     }
-
     fn low(&self) -> &T {
         match self {
             Unit::Singleton(l) => l,
             Unit::Range((l, _)) => l,
         }
     }
-
     fn high(&self) -> &T {
         match self {
             Unit::Singleton(h) => h,
@@ -84,30 +81,30 @@ impl<T: Num + SaturatingSub + Ord + Copy> Ranger<T> {
     pub fn new() -> Self {
         Self(BTreeSet::new())
     }
-
     pub fn insert(&mut self, v: T) {
         let value = Unit::Singleton(v);
-
-        self.0.insert(value);
         if let Some(low) = self.0.range(..value).next_back().copied() {
             if let Some(merged) = low.merged(&value) {
-                self.0.remove(&value);
                 self.0.remove(&low);
                 self.0.insert(merged);
             }
         }
+        self.0.insert(value);
 
         while let Some((m, l, h)) = self
-            .0
-            .range(value..)
-            .copied()
-            .next_tuple()
+            .tuple_at(value)
             .and_then(|(l, h)| l.merged(&h).map(|m| (m, l, h)))
         {
             self.0.remove(&l);
             self.0.remove(&h);
             self.0.insert(m);
         }
+    }
+    fn tuple_at(&mut self, value: Unit<T>) -> Option<(Unit<T>, Unit<T>)> {
+        let mut iter = self.0.range(value..).copied();
+        let low = iter.next()?;
+        let high = iter.next()?;
+        Some((low, high))
     }
 }
 
