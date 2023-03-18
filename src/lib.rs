@@ -9,58 +9,31 @@ pub enum Unit<T: Num + SaturatingAdd> {
 
 impl<T: Num + Ord + SaturatingAdd + Copy> Unit<T> {
     fn merged(&self, other: &Self) -> Option<Unit<T>> {
-        let l = self.low();
-        let h = other.high();
-        if l < h && l.saturating_add(&T::one()) == h {
-            return Some(Unit::Range((l, h)))
-        }
-        match self {
-            Unit::Single(s) => match other {
-                Unit::Single(o) => {
-                    if s < o && s.saturating_add(&T::one()) == *o {
-                        Some(Unit::Range((*s, *o)))
-                    } else {
-                        None
-                    }
-                }
-                Unit::Range((ol, oh)) => {
-                    if s < ol && s.saturating_add(&T::one()) == *ol {
-                        Some(Unit::Range((*s, *oh)))
-                    } else {
-                        None
-                    }
-                }
-            },
-            Unit::Range((sl, sh)) => match other {
-                Unit::Single(o) => {
-                    if sh < o && sh.saturating_add(&T::one()) == *o {
-                        Some(Unit::Range((*sl, *o)))
-                    } else {
-                        None
-                    }
-                }
-                Unit::Range((ol, oh)) => {
-                    if sh < ol && sh.saturating_add(&T::one()) == *ol || sl <= oh && ol <= sh {
-                        Some(Unit::Range((*sl, *oh)))
-                    } else {
-                        None
-                    }
-                }
-            },
+        let sh = self.high();
+        let ol = other.low();
+        let sl = self.low();
+        let oh = other.high();
+        if sl < oh && sl.saturating_add(&T::one()) == *oh
+            || sl <= oh && ol <= sh
+            || sh < ol && sh.saturating_add(&T::one()) == *ol
+        {
+            Some(Unit::Range((*sl, *oh)))
+        } else {
+            None
         }
     }
 
-    fn low(&self) -> T {
+    fn low(&self) -> &T {
         match self {
-            Unit::Single(l) => *l,
-            Unit::Range((l, _)) => *l,
+            Unit::Single(l) => l,
+            Unit::Range((l, _)) => l,
         }
     }
 
-    fn high(&self) -> T {
+    fn high(&self) -> &T {
         match self {
-            Unit::Single(h) => *h,
-            Unit::Range((_, h)) => *h,
+            Unit::Single(h) => h,
+            Unit::Range((_, h)) => h,
         }
     }
 }
@@ -82,44 +55,18 @@ impl<T: Num + SaturatingAdd + Ord + Copy> Ord for Unit<T> {
 
 impl<T: Num + SaturatingAdd + Ord + Copy> PartialOrd for Unit<T> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        // let l = self.low();
-        // let h = other.high();
-        // if l < h && l.saturating_add(&T::one()) == h {
-        //     return                         Some(Ordering::Equal)
-        // }
-        match self {
-            Unit::Single(s) => match other {
-                Unit::Single(o) => Some(s.cmp(o)),
-                Unit::Range((ol, oh)) => {
-                    if s < ol {
-                        Some(Ordering::Less)
-                    } else if s > oh {
-                        Some(Ordering::Greater)
-                    } else {
-                        Some(Ordering::Equal)
-                    }
-                }
-            },
-            Unit::Range((sl, sh)) => match other {
-                Unit::Single(o) => {
-                    if sl > o {
-                        Some(Ordering::Greater)
-                    } else if sh < o {
-                        Some(Ordering::Less)
-                    } else {
-                        Some(Ordering::Equal)
-                    }
-                }
-                Unit::Range((ol, oh)) => {
-                    if sl > oh {
-                        Some(Ordering::Greater)
-                    } else if sh < ol {
-                        Some(Ordering::Less)
-                    } else {
-                        Some(Ordering::Equal)
-                    }
-                }
-            },
+        let sh = self.high();
+        let ol = other.low();
+        let sl = self.low();
+        let oh = other.high();
+        if sl > oh || sl > ol {
+            Some(Ordering::Greater)
+        } else if sh < ol {
+            Some(Ordering::Less)
+        } else if sh == ol {
+            Some(Ordering::Equal)
+        } else {
+            Some(sh.cmp(&oh))
         }
     }
 }
@@ -200,6 +147,7 @@ mod tests {
         );
         drop(ranger);
 
+        // Just to be extra thorough
         for _ in 0..100_000 {
             let mut myvec = input_numbers.to_vec();
             myvec.shuffle(&mut thread_rng());
