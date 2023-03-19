@@ -74,9 +74,11 @@ impl<T: Num + SaturatingSub + Ord + Copy> Ranger<T> {
         Self(BTreeSet::new())
     }
     pub fn insert(&mut self, value: T) {
-        self.merge_at(Unit{l: value, h: value});
+        if self.0.len() > 1 {
+            self.merge_at(Unit{l: value, h: value});
+        }
         self.0.insert(Unit{l: value, h: value});
-        while self.merge_from(Unit{l: value, h: value}).is_some() {}
+        while self.0.len() > 2 && self.merge_from(Unit{l: value, h: value}).is_some() {}
     }
     fn merge_from(&mut self, value: Unit<T>) -> Option<()> {
         let (low, high) = self.tuple_at(value)?;
