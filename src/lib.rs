@@ -81,30 +81,29 @@ impl<T: Num + SaturatingSub + Ord + Copy> Ranger<T> {
     pub fn new() -> Self {
         Self(BTreeSet::new())
     }
-    pub fn insert(&mut self, v: T) {
-        let value = Unit::Singleton(v);
-        if let Some(low) = self.0.range(..value).next_back().copied() {
-            if let Some(merged) = low.merged(&value) {
-                self.0.remove(&low);
-                self.0.insert(merged);
-            }
-        }
-        self.0.insert(value);
-
-        while let Some((m, l, h)) = self
-            .tuple_at(value)
-            .and_then(|(l, h)| l.merged(&h).map(|m| (m, l, h)))
-        {
-            self.0.remove(&l);
-            self.0.remove(&h);
-            self.0.insert(m);
-        }
+    pub fn insert(&mut self, value: T) {
+        self.merge_at(Unit::Singleton(value));
+        self.0.insert(Unit::Singleton(value));
+        while self.merge_from(Unit::Singleton(value)).is_some() {}
+    }
+    fn merge_from(&mut self, value: Unit<T>) -> Option<()> {
+        let (low, high) = self.tuple_at(value)?;
+        low.merged(&high).map(|merged| {
+            self.0.remove(&low);
+            self.0.remove(&high);
+            self.0.insert(merged);
+        })
+    }
+    fn merge_at(&mut self, value: Unit<T>) -> Option<()> {
+        let low = self.0.range(..value).next_back().copied()?;
+        low.merged(&value).map(|merged| {
+            self.0.remove(&low);
+            self.0.insert(merged);
+        })
     }
     fn tuple_at(&mut self, value: Unit<T>) -> Option<(Unit<T>, Unit<T>)> {
         let mut iter = self.0.range(value..).copied();
-        let low = iter.next()?;
-        let high = iter.next()?;
-        Some((low, high))
+        Some((iter.next()?, iter.next()?))
     }
 }
 
@@ -112,7 +111,7 @@ impl<T: Num + SaturatingSub + Ord + Copy> Ranger<T> {
 mod tests {
     use super::*;
     use alloc::string::ToString;
-    use libc_print::libc_println;
+    use libc_print::std_name::println;
     use rand::{seq::SliceRandom, thread_rng};
 
     #[test]
@@ -146,19 +145,17 @@ mod tests {
             ranger.to_string(),
             "-128--126,-1-2,4,6-8,11-12,14-25,27-33,35-39,125-127"
         );
-        libc_println!("{:?} -> {ranger}", input_numbers);
+        println!("{:?} -> {ranger}", input_numbers);
         drop(ranger);
 
         // Rule out edge cases
-        for _ in 0..10_000 {
+        for _ in 0..100_000 {
             let mut myvec = input_numbers.to_vec();
             myvec.shuffle(&mut thread_rng());
-            // println!("{:?}", myvec);
             let mut ranger = Ranger::new();
             for num in myvec {
                 ranger.insert(num);
             }
-
             assert_eq!(
                 ranger.to_string(),
                 "-128--126,-1-2,4,6-8,11-12,14-25,27-33,35-39,125-127"
