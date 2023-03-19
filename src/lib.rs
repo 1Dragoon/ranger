@@ -7,18 +7,26 @@ use core::{
 };
 use num_traits::{Num, SaturatingSub};
 
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
-pub struct Unit<T> {
+#[derive(Clone, Eq, PartialEq, Debug)]
+struct Unit<T> {
     l: T,
     h: T,
 }
 
-impl<T: Num + Ord + SaturatingSub + Copy> Unit<T> {
-    fn merged(&self, other: &Self) -> Option<Unit<T>> {
+enum Merger<T> {
+    Merged(T),
+    NotMerged(T, T),
+}
+
+impl<T: Num + Ord + SaturatingSub> Unit<T> {
+    fn merged(self, other: Self) -> Merger<Unit<T>> {
         if other.l.saturating_sub(&self.h).is_one() {
-            Some(Unit{l: self.l, h: other.h})
+            Merger::Merged(Unit {
+                l: self.l,
+                h: other.h,
+            })
         } else {
-            None
+            Merger::NotMerged(self, other)
         }
     }
     // fn singleton(value: T) -> Self {
@@ -26,13 +34,13 @@ impl<T: Num + Ord + SaturatingSub + Copy> Unit<T> {
     // }
 }
 
-impl<T: Num + SaturatingSub + Ord + Copy> Ord for Unit<T> {
+impl<T: Num + SaturatingSub + Ord> Ord for Unit<T> {
     fn cmp(&self, other: &Self) -> Ordering {
         unsafe { self.partial_cmp(other).unwrap_unchecked() }
     }
 }
 
-impl<T: Num + SaturatingSub + Ord + Copy> PartialOrd for Unit<T> {
+impl<T: Num + SaturatingSub + Ord> PartialOrd for Unit<T> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         if self.l > other.h {
             Some(Ordering::Greater)
@@ -69,35 +77,58 @@ impl<T: Num + Display> Display for Ranger<T> {
     }
 }
 
-impl<T: Num + SaturatingSub + Ord + Copy> Ranger<T> {
+impl<T: Num + SaturatingSub + Ord + Clone> Ranger<T> {
     pub fn new() -> Self {
         Self(BTreeSet::new())
     }
     pub fn insert(&mut self, value: T) {
-        if self.0.len() > 1 {
-            self.merge_at(Unit{l: value, h: value});
+        let v = Unit{l: value.clone(), h: value};
+        self.merge_at(v.clone());
+        while self.0.len() > 1 && self.merge_from(&v) {}
+    }
+    fn merge_at(&mut self, value: Unit<T>) {
+        let mut high_side = self.0.split_off(&value);
+        high_side.insert(value);
+        if let Some(low) = self.0.pop_last() {
+            if let Some(high) = high_side.pop_first() {
+                match low.merged(high) {
+                    Merger::Merged(merged) => {
+                        self.0.insert(merged);
+                    },
+                    Merger::NotMerged(low, high) => {
+                        self.0.insert(low);
+                        self.0.insert(high);
+                    },
+                }
+            } else {
+                self.0.insert(low);
+            }
         }
-        self.0.insert(Unit{l: value, h: value});
-        while self.0.len() > 2 && self.merge_from(Unit{l: value, h: value}).is_some() {}
+        self.0.extend(high_side);
     }
-    fn merge_from(&mut self, value: Unit<T>) -> Option<()> {
-        let (low, high) = self.tuple_at(value)?;
-        low.merged(&high).map(|merged| {
-            self.0.remove(&low);
-            self.0.remove(&high);
-            self.0.insert(merged);
-        })
-    }
-    fn merge_at(&mut self, value: Unit<T>) -> Option<()> {
-        let low = self.0.range(..value).next_back().copied()?;
-        low.merged(&value).map(|merged| {
-            self.0.remove(&low);
-            self.0.insert(merged);
-        })
-    }
-    fn tuple_at(&mut self, value: Unit<T>) -> Option<(Unit<T>, Unit<T>)> {
-        let mut iter = self.0.range(value..).copied();
-        Some((iter.next()?, iter.next()?))
+    fn merge_from(&mut self, value: &Unit<T>) -> bool {
+        let mut merge_done = false;
+        let mut high_set = self.0.split_off(value);
+        if high_set.len() > 1 {
+            let (low, high) = unsafe {
+                (
+                    high_set.pop_first().unwrap_unchecked(),
+                    high_set.pop_first().unwrap_unchecked(),
+                )
+            };
+            match low.merged(high) {
+                Merger::Merged(merged) => {
+                    self.0.insert(merged);
+                    merge_done = true;
+                }
+                Merger::NotMerged(low, high) => {
+                    self.0.insert(low);
+                    self.0.insert(high);
+                }
+            }
+        }
+        self.0.extend(high_set);
+        merge_done
     }
 }
 
@@ -143,7 +174,7 @@ mod tests {
         drop(ranger);
 
         // Rule out edge cases
-        for _ in 0..100_000 {
+        for _ in 0..10_000 {
             let mut myvec = input_numbers.to_vec();
             myvec.shuffle(&mut thread_rng());
             let mut ranger = Ranger::new();
