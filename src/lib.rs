@@ -8,62 +8,50 @@ use core::{
 use num_traits::{Num, SaturatingSub};
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
-pub enum Unit<T> {
-    Singleton(T),
-    Range((T, T)),
+pub struct R<T> {
+    t: (T, T)
 }
 
-impl<T: Num + Ord + SaturatingSub + Copy> Unit<T> {
-    fn merged(&self, other: &Self) -> Option<Unit<T>> {
-        if other.low().saturating_sub(self.high()).is_one() {
-            Some(Unit::Range((*self.low(), *other.high())))
+impl<T: Num + Ord + SaturatingSub + Copy> R<T> {
+    fn merged(&self, other: &Self) -> Option<R<T>> {
+        if other.t.0.saturating_sub(&self.t.1).is_one() {
+            Some(R{t: (self.t.0, other.t.1)})
         } else {
             None
         }
     }
-    fn low(&self) -> &T {
-        match self {
-            Unit::Singleton(l) => l,
-            Unit::Range((l, _)) => l,
-        }
-    }
-    fn high(&self) -> &T {
-        match self {
-            Unit::Singleton(h) => h,
-            Unit::Range((_, h)) => h,
-        }
-    }
 }
 
-impl<T: Num + SaturatingSub + Ord + Copy> Ord for Unit<T> {
+impl<T: Num + SaturatingSub + Ord + Copy> Ord for R<T> {
     fn cmp(&self, other: &Self) -> Ordering {
         unsafe { self.partial_cmp(other).unwrap_unchecked() }
     }
 }
 
-impl<T: Num + SaturatingSub + Ord + Copy> PartialOrd for Unit<T> {
+impl<T: Num + SaturatingSub + Ord + Copy> PartialOrd for R<T> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        if self.low() > other.high() {
+        if self.t.0 > other.t.1 {
             Some(Ordering::Greater)
-        } else if self.high() < other.low() {
+        } else if self.t.1 < other.t.0 {
             Some(Ordering::Less)
         } else {
-            Some(self.high().cmp(other.high()))
+            Some(self.t.1.cmp(&other.t.1))
         }
     }
 }
 
-impl<T: Num + Display> Display for Unit<T> {
+impl<T: Num + Display> Display for R<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Unit::Singleton(s) => write!(f, "{s}"),
-            Unit::Range((t, u)) => write!(f, "{t}-{u}"),
+        if self.t.0 == self.t.1 {
+            write!(f, "{}", self.t.0)
+        } else {
+            write!(f, "{}-{}", self.t.0, self.t.1)
         }
     }
 }
 
 #[derive(Default)]
-pub struct Ranger<T: Num>(BTreeSet<Unit<T>>);
+pub struct Ranger<T: Num>(BTreeSet<R<T>>);
 
 impl<T: Num + Display> Display for Ranger<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -82,11 +70,11 @@ impl<T: Num + SaturatingSub + Ord + Copy> Ranger<T> {
         Self(BTreeSet::new())
     }
     pub fn insert(&mut self, value: T) {
-        self.merge_at(Unit::Singleton(value));
-        self.0.insert(Unit::Singleton(value));
-        while self.merge_from(Unit::Singleton(value)).is_some() {}
+        self.merge_at(R{t: (value, value)});
+        self.0.insert(R{t: (value, value)});
+        while self.merge_from(R{t: (value, value)}).is_some() {}
     }
-    fn merge_from(&mut self, value: Unit<T>) -> Option<()> {
+    fn merge_from(&mut self, value: R<T>) -> Option<()> {
         let (low, high) = self.tuple_at(value)?;
         low.merged(&high).map(|merged| {
             self.0.remove(&low);
@@ -94,14 +82,14 @@ impl<T: Num + SaturatingSub + Ord + Copy> Ranger<T> {
             self.0.insert(merged);
         })
     }
-    fn merge_at(&mut self, value: Unit<T>) -> Option<()> {
+    fn merge_at(&mut self, value: R<T>) -> Option<()> {
         let low = self.0.range(..value).next_back().copied()?;
         low.merged(&value).map(|merged| {
             self.0.remove(&low);
             self.0.insert(merged);
         })
     }
-    fn tuple_at(&mut self, value: Unit<T>) -> Option<(Unit<T>, Unit<T>)> {
+    fn tuple_at(&mut self, value: R<T>) -> Option<(R<T>, R<T>)> {
         let mut iter = self.0.range(value..).copied();
         Some((iter.next()?, iter.next()?))
     }
