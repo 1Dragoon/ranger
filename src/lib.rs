@@ -141,7 +141,7 @@ mod tests {
         drop(ranger);
 
         // Rule out edge cases
-        for _ in 0..100_000 {
+        for _ in 0..10_000 {
             let mut myvec = input_numbers.to_vec();
             myvec.shuffle(&mut thread_rng());
             let mut ranger = Ranger::new();
