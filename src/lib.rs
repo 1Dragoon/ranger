@@ -80,8 +80,7 @@ impl<T: Eq + Display> Display for Ranger<T> {
 }
 
 /// Pops the element immediately before the specified value
-pub fn pop_before<K: Ord>(set: &mut BTreeSet<K>, value: &K) -> Option<K>
-{
+pub fn pop_before<K: Ord>(set: &mut BTreeSet<K>, value: &K) -> Option<K> {
     let key_ref = {
         if let Some(key_ref) = set.range(..=value).next_back() {
             /* must hide the origin of this borrow ... */
@@ -96,8 +95,7 @@ pub fn pop_before<K: Ord>(set: &mut BTreeSet<K>, value: &K) -> Option<K>
 }
 
 /// Pops the element immediately after the specified value
-pub fn pop_after<K: Ord>(set: &mut BTreeSet<K>, value: &K) -> Option<K>
-{
+pub fn pop_after<K: Ord>(set: &mut BTreeSet<K>, value: &K) -> Option<K> {
     let key_ref = {
         if let Some(key_ref) = set.range(value..).next() {
             /* must hide the origin of this borrow ... */
@@ -129,12 +127,17 @@ where
     set.take(key_ref)
 }
 
-impl<T: Num + SaturatingSub + Ord> Ranger<T> {
+impl<T: Num + SaturatingSub + Ord + Display> Ranger<T> {
     pub fn new() -> Self {
         Self(BTreeSet::new())
     }
-    pub fn insert(&mut self, value: T) {
+    pub fn insert(&mut self, value: T) -> bool {
         let u = Unit { l: value, h: None };
+        if let Some(v) = self.0.range(&u..).next() {
+            if v.l <= u.l && &u.l <= v.h.as_ref().unwrap_or(&v.l) {
+                return false;
+            }
+        }
         let v = if let Some(mut low) = pop_before(&mut self.0, &u) {
             match low.merged(u) {
                 Merger::Merged => low,
@@ -162,6 +165,7 @@ impl<T: Num + SaturatingSub + Ord> Ranger<T> {
                 self.0.insert(low);
             }
         }
+        true
     }
 }
 
@@ -175,7 +179,7 @@ mod tests {
     #[test]
     fn it_works() {
         let input_numbers: &mut [u8] = &mut [
-            0, 1, 2, 4, 6, 7, 8, 11, 12, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 27, 28,
+            0, 1, 2, 4, 6, 7, 8, 11, 12, 14, 15, 16, 17, 18, 19, 20, 21, 0, 22, 23, 24, 25, 27, 28,
             29, 30, 31, 32, 33, 35, 36, 37, 38, 39,
         ];
         let mut ranger = Ranger::new();
@@ -192,7 +196,7 @@ mod tests {
         assert_eq!(ranger.to_string(), "0-2,4,6-8,11-12,14-25,27-33,35-39");
         drop(ranger);
         let input_numbers: &[i8] = &[
-            -1, 33, 35, 23, 20, -128, 28, 19, 18, 14, 25, 21, 127, 38, 6, 39, 27, 11, 17, 7, 12,
+            -1, 33, 35, 23, 20, -128, 28, 0, 19, 18, 14, 25, 21, 127, 38, 6, 39, 27, 11, 17, 7, 12,
             126, -126, 31, 15, 32, 4, 29, 36, 22, 1, 0, 37, 30, 8, 24, 16, 2, -127, 125,
         ];
         let mut ranger = Ranger::new();
