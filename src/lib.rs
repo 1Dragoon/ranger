@@ -10,28 +10,27 @@ use num_traits::{Num, SaturatingSub};
 #[derive(Clone, Eq, PartialEq, Debug)]
 struct Unit<T> {
     l: T,
-    h: T,
+    h: Option<T>,
 }
 
 enum Merger<T> {
-    Merged(T),
-    NotMerged(T, T),
+    Merged,
+    NotMerged(T),
 }
 
 impl<T: Num + Ord + SaturatingSub> Unit<T> {
-    fn merged(self, other: Self) -> Merger<Unit<T>> {
-        if other.l.saturating_sub(&self.h).is_one() {
-            Merger::Merged(Unit {
-                l: self.l,
-                h: other.h,
-            })
+    fn merged(&mut self, other: Self) -> Merger<Unit<T>> {
+        if other
+            .l
+            .saturating_sub(self.h.as_ref().unwrap_or(&self.l))
+            .is_one()
+        {
+            self.h = other.h.or(Some(other.l));
+            Merger::Merged
         } else {
-            Merger::NotMerged(self, other)
+            Merger::NotMerged(other)
         }
     }
-    // fn singleton(value: T) -> Self {
-    //     Self{l: value, h: Cow::Borrowed}
-    // }
 }
 
 impl<T: Num + SaturatingSub + Ord> Ord for Unit<T> {
@@ -42,27 +41,30 @@ impl<T: Num + SaturatingSub + Ord> Ord for Unit<T> {
 
 impl<T: Num + SaturatingSub + Ord> PartialOrd for Unit<T> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        if self.l > other.h {
+        let sh = self.h.as_ref().unwrap_or(&self.l);
+        let oh = other.h.as_ref().unwrap_or(&other.l);
+        if &self.l > oh {
             Some(Ordering::Greater)
-        } else if self.h < other.l {
+        } else if sh < &other.l {
             Some(Ordering::Less)
         } else {
-            Some(self.h.cmp(&other.h))
+            Some(sh.cmp(oh))
         }
     }
 }
 
 impl<T: Num + Display> Display for Unit<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.l == self.h {
+        let sh = self.h.as_ref().unwrap_or(&self.l);
+        if &self.l == sh {
             write!(f, "{}", self.l)
         } else {
-            write!(f, "{}-{}", self.l, self.h)
+            write!(f, "{}-{}", self.l, sh)
         }
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Debug, Default)]
 pub struct Ranger<T: Num>(BTreeSet<Unit<T>>);
 
 impl<T: Num + Display> Display for Ranger<T> {
@@ -77,58 +79,46 @@ impl<T: Num + Display> Display for Ranger<T> {
     }
 }
 
-impl<T: Num + SaturatingSub + Ord + Clone> Ranger<T> {
+impl<T: Num + SaturatingSub + Ord> Ranger<T> {
     pub fn new() -> Self {
         Self(BTreeSet::new())
     }
     pub fn insert(&mut self, value: T) {
-        let v = Unit{l: value.clone(), h: value};
-        self.merge_at(v.clone());
-        while self.0.len() > 1 && self.merge_from(&v) {}
-    }
-    fn merge_at(&mut self, value: Unit<T>) {
-        let mut high_side = self.0.split_off(&value);
-        high_side.insert(value);
-        if let Some(low) = self.0.pop_last() {
-            if let Some(high) = high_side.pop_first() {
-                match low.merged(high) {
-                    Merger::Merged(merged) => {
-                        self.0.insert(merged);
-                    },
-                    Merger::NotMerged(low, high) => {
-                        self.0.insert(low);
-                        self.0.insert(high);
-                    },
+        let v = Unit { l: value, h: None };
+        let mut high_set = self.0.split_off(&v);
+        let value = if !self.0.is_empty() {
+            let mut low = unsafe { self.0.pop_last().unwrap_unchecked() };
+            match low.merged(v) {
+                Merger::Merged => low,
+                Merger::NotMerged(v) => {
+                    self.0.insert(low);
+                    v
                 }
-            } else {
-                self.0.insert(low);
             }
-        }
-        self.0.extend(high_side);
-    }
-    fn merge_from(&mut self, value: &Unit<T>) -> bool {
-        let mut merge_done = false;
-        let mut high_set = self.0.split_off(value);
-        if high_set.len() > 1 {
-            let (low, high) = unsafe {
+        } else {
+            v
+        };
+        high_set.insert(value);
+        let mut merge_done = true;
+        while high_set.len() > 1 && merge_done {
+            let (mut low, high) = unsafe {
                 (
                     high_set.pop_first().unwrap_unchecked(),
                     high_set.pop_first().unwrap_unchecked(),
                 )
             };
             match low.merged(high) {
-                Merger::Merged(merged) => {
-                    self.0.insert(merged);
-                    merge_done = true;
+                Merger::Merged => {
+                    self.0.insert(low);
                 }
-                Merger::NotMerged(low, high) => {
+                Merger::NotMerged(high) => {
                     self.0.insert(low);
                     self.0.insert(high);
+                    merge_done = false;
                 }
             }
         }
         self.0.extend(high_set);
-        merge_done
     }
 }
 
