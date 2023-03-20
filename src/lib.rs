@@ -79,46 +79,89 @@ impl<T: Eq + Display> Display for Ranger<T> {
     }
 }
 
+/// Pops the element immediately before the specified value
+pub fn pop_before<K: Ord>(set: &mut BTreeSet<K>, value: &K) -> Option<K>
+{
+    let key_ref = {
+        if let Some(key_ref) = set.range(..=value).next_back() {
+            /* must hide the origin of this borrow ... */
+            unsafe { &*(key_ref as *const _) }
+        } else {
+            return None;
+        }
+    };
+    /* ... so that we may be able to mutably borrow the set here
+    despite key_ref existence */
+    set.take(key_ref)
+}
+
+/// Pops the element immediately after the specified value
+pub fn pop_after<K: Ord>(set: &mut BTreeSet<K>, value: &K) -> Option<K>
+{
+    let key_ref = {
+        if let Some(key_ref) = set.range(value..).next() {
+            /* must hide the origin of this borrow ... */
+            unsafe { &*(key_ref as *const _) }
+        } else {
+            return None;
+        }
+    };
+    /* ... so that we may be able to mutably borrow the set here
+    despite key_ref existence */
+    set.take(key_ref)
+}
+
+/// Pops the element equal to the value specified
+pub fn pop<K>(set: &mut BTreeSet<K>, value: &K) -> Option<K>
+where
+    K: Ord,
+{
+    let key_ref = {
+        if let Some(key_ref) = set.range(..=value).next() {
+            /* must hide the origin of this borrow ... */
+            unsafe { &*(key_ref as *const _) }
+        } else {
+            return None;
+        }
+    };
+    /* ... so that we may be able to mutably borrow the set here
+    despite key_ref existence */
+    set.take(key_ref)
+}
+
 impl<T: Num + SaturatingSub + Ord> Ranger<T> {
     pub fn new() -> Self {
         Self(BTreeSet::new())
     }
     pub fn insert(&mut self, value: T) {
-        let v = Unit { l: value, h: None };
-        let mut high_set = self.0.split_off(&v);
-        let value = if !self.0.is_empty() {
-            let mut low = unsafe { self.0.pop_last().unwrap_unchecked() };
-            match low.merged(v) {
+        let u = Unit { l: value, h: None };
+        let v = if let Some(mut low) = pop_before(&mut self.0, &u) {
+            match low.merged(u) {
                 Merger::Merged => low,
-                Merger::NotMerged(v) => {
+                Merger::NotMerged(value) => {
                     self.0.insert(low);
-                    v
+                    value
                 }
             }
         } else {
-            v
+            u
         };
-        high_set.insert(value);
-        let mut merge_done = true;
-        while high_set.len() > 1 && merge_done {
-            let (mut low, high) = unsafe {
-                (
-                    high_set.pop_first().unwrap_unchecked(),
-                    high_set.pop_first().unwrap_unchecked(),
-                )
-            };
-            match low.merged(high) {
-                Merger::Merged => {
-                    self.0.insert(low);
+        let mut holster = Some(v);
+        while let Some(mut low) = holster.take() {
+            if let Some(high) = pop_after(&mut self.0, &low) {
+                match low.merged(high) {
+                    Merger::Merged => {
+                        holster = Some(low);
+                    }
+                    Merger::NotMerged(high) => {
+                        self.0.insert(low);
+                        self.0.insert(high);
+                    }
                 }
-                Merger::NotMerged(high) => {
-                    self.0.insert(low);
-                    self.0.insert(high);
-                    merge_done = false;
-                }
+            } else {
+                self.0.insert(low);
             }
         }
-        self.0.extend(high_set);
     }
 }
 
