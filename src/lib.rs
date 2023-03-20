@@ -33,13 +33,13 @@ impl<T: Num + Ord + SaturatingSub> Unit<T> {
     }
 }
 
-impl<T: Num + SaturatingSub + Ord> Ord for Unit<T> {
+impl<T: Ord> Ord for Unit<T> {
     fn cmp(&self, other: &Self) -> Ordering {
         unsafe { self.partial_cmp(other).unwrap_unchecked() }
     }
 }
 
-impl<T: Num + SaturatingSub + Ord> PartialOrd for Unit<T> {
+impl<T: Ord> PartialOrd for Unit<T> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         let sh = self.h.as_ref().unwrap_or(&self.l);
         let oh = other.h.as_ref().unwrap_or(&other.l);
@@ -53,7 +53,7 @@ impl<T: Num + SaturatingSub + Ord> PartialOrd for Unit<T> {
     }
 }
 
-impl<T: Num + Display> Display for Unit<T> {
+impl<T: Eq + Display> Display for Unit<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let sh = self.h.as_ref().unwrap_or(&self.l);
         if &self.l == sh {
@@ -65,9 +65,9 @@ impl<T: Num + Display> Display for Unit<T> {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct Ranger<T: Num>(BTreeSet<Unit<T>>);
+pub struct Ranger<T>(BTreeSet<Unit<T>>);
 
-impl<T: Num + Display> Display for Ranger<T> {
+impl<T: Eq + Display> Display for Ranger<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for u in self.0.iter().take(self.0.len().saturating_sub(1)) {
             write!(f, "{},", u)?
