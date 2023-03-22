@@ -1,4 +1,5 @@
 #![no_std]
+mod parse;
 extern crate alloc;
 use alloc::collections::BTreeSet;
 use core::{
@@ -131,13 +132,26 @@ impl<T: Num + SaturatingSub + Ord + Display> Ranger<T> {
     pub fn new() -> Self {
         Self(BTreeSet::new())
     }
-    pub fn insert(&mut self, value: T) -> bool {
-        let u = Unit { l: value, h: None };
+    pub fn contains(&self, value: &T) -> bool {
+        let mut contained = false;
+        let v = unsafe {core::ptr::read(value)};
+        let u = Unit { l: v, h: None };
         if let Some(v) = self.0.range(&u..).next() {
             if v.l <= u.l && &u.l <= v.h.as_ref().unwrap_or(&v.l) {
-                return false;
+                contained = true;
             }
         }
+        core::mem::forget(u.l);
+        contained
+    }
+    pub fn insert(&mut self, value: T) -> bool {
+        if self.contains(&value) {
+            return false
+        }
+        let u = Unit {
+            l: value,
+            h: None,
+        };
         let v = if let Some(mut low) = pop_before(&mut self.0, &u) {
             match low.merged(u) {
                 Merger::Merged => low,
